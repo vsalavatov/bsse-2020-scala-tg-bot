@@ -161,16 +161,33 @@ class Bot(override val client: RequestHandler[Future], val server: Server, val s
 
 object BotStarter {
   def main(args: Array[String]): Unit = {
-    implicit val ec: ExecutionContext = ExecutionContext.global
-    implicit val backend: SttpBackend[Future, Nothing] = OkHttpFutureBackend(
-      SttpBackendOptions.Default.socksProxy("ps8yglk.ddns.net", 11999)
-    )
+    case class Config(telegramToken: String = "", imgurClientId: String = "")
+    val parser = new scopt.OptionParser[Config]("bot") {
+      head("telegram bot", "0.1")
 
-    // TODO: move token to the FILE and make it secured!!!
-    val token = ""
-    val server = new Server()
-    val service = new PictureService()
-    val bot = new Bot(new FutureSttpClient((token)), server, service)
-    Await.result(bot.run(), Duration.Inf)
+      opt[String]('t', "token")
+        .required()
+        .valueName("<telegram bot token>")
+        .action((x, c) => c.copy(telegramToken = x))
+
+      opt[String]('i', "imgur")
+        .required()
+        .valueName("<imgur client id>")
+        .action((x, c) => c.copy(imgurClientId = x))
+    }
+
+    parser.parse(args, Config()) match {
+      case Some(config) =>
+        implicit val ec: ExecutionContext = ExecutionContext.global
+        implicit val backend: SttpBackend[Future, Nothing] = OkHttpFutureBackend(
+          SttpBackendOptions.Default.socksProxy("ps8yglk.ddns.net", 11999)
+        )
+        val server = new Server()
+        val service = new PictureService(config.imgurClientId)
+        val bot = new Bot(new FutureSttpClient((config.telegramToken)), server, service)
+        Await.result(bot.run(), Duration.Inf)
+      case None =>
+        println("You must specify service tokens!")
+    }
   }
 }
