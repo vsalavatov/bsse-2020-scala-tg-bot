@@ -4,12 +4,14 @@ import com.bot4s.telegram.api.RequestHandler
 import com.bot4s.telegram.api.declarative.{Action, Commands}
 import com.bot4s.telegram.clients.FutureSttpClient
 import com.bot4s.telegram.future.{Polling, TelegramBot}
-import com.bot4s.telegram.models.{Message, User}
+import com.bot4s.telegram.methods.SendPhoto
+import com.bot4s.telegram.models.{InputFile, Message, User}
 import com.softwaremill.sttp.{SttpBackend, SttpBackendOptions, sttp}
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import org.json4s.native.Serialization
 import com.softwaremill.sttp.json4s._
 import com.softwaremill.sttp._
+import scopt.OParser
 
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -28,20 +30,24 @@ case class Response(data: List[Data])
 case class Data(images: List[InnerData])
 case class InnerData(link: String)
 
-class PictureService(implicit val backend: SttpBackend[Future, Nothing], implicit val ec: ExecutionContext) {
+case class NoImageException(msg: String) extends Exception
+
+class PictureService(val imgurClientId: String)(implicit val backend: SttpBackend[Future, Nothing], implicit val ec: ExecutionContext) {
 
   private implicit val serialization: Serialization.type = org.json4s.native.Serialization
 
   def getImage(tag: String): Future[String] = {
     val request = sttp
-      // TODO: Move Client-ID to the file and make it secured
-      .header("Authorization", "Client-ID XXX")
+      .header("Authorization", "Client-ID " + imgurClientId)
       .get(uri"https://api.imgur.com/3/gallery/search?q=${tag}")
       .response(asJson[Response])
 
     backend.send(request).map { response =>
-      // TODO: what if there's no head
-      Random.shuffle(response.unsafeBody.data.flatMap(_.images)).head.link
+      try {
+        Random.shuffle(response.unsafeBody.data.flatMap(_.images)).head.link
+      } catch {
+        case _: Throwable => throw NoImageException("Sorry, no images have been found...")
+      }
     }
   }
 }
@@ -90,7 +96,8 @@ class Server {
 
 class Bot(override val client: RequestHandler[Future], val server: Server, val service: PictureService) extends TelegramBot
   with Polling
-  with Commands[Future] {
+  with Commands[Future]
+  with PhotoTrait[Future] {
 
 
   onCommand("/start") { implicit msg =>
@@ -110,12 +117,11 @@ class Bot(override val client: RequestHandler[Future], val server: Server, val s
   onCommand("/send") { implicit msg =>
     server.registeredOrNot { admin =>
       withArgs { args =>
-        //TODO: I don't like this magic constant
-        if (args.length != 2)
-          reply("You should provide 2 arguments").void
+        if (args.length < 2)
+          reply("Usage: /send id message").void
         else {
           try {
-            server.sendMessage(args(0).toInt, admin, args(1).mkString)
+            server.sendMessage(args(0).toInt, admin, msg.text.get.dropWhile(_ != ' ').dropWhile(_ != ' '))
           } catch {
             case _: NumberFormatException => reply("First argument should be an integer. Usage: /send id message").void
             case _: Throwable => reply("Something went wrong").void
@@ -140,23 +146,25 @@ class Bot(override val client: RequestHandler[Future], val server: Server, val s
 
   onCommand("/img") { implicit msg =>
     server.registeredOrNot { admin =>
-      withArgs { args =>
-        try {
-          if (args.isEmpty) throw new IndexOutOfBoundsException()
-          // TODO: what if getImage is empty
-          service.getImage(args.mkString(" ")).flatMap { link =>
-            reply(link)
-          }.void
-        } catch {
-          case _: IndexOutOfBoundsException => reply("Empty argument list. Usage: /img tag").void
-        }
+      val tag = msg.text.get.drop("/img ".length)
+      try {
+        if (tag.isEmpty) throw new IndexOutOfBoundsException()
+        service.getImage(tag).flatMap { link =>
+          try {
+            replyWithPhoto(InputFile(link))
+          } catch {
+            case _ => reply(link) // maybe it isn't a photo...
+          }
+        }.void
+      } catch {
+        case e: NoImageException => reply(e.msg).void
+        case _: IndexOutOfBoundsException => reply("Empty argument list. Usage: /img tag").void
       }
     } /* or else */ {
       user =>
         reply(s"${user.firstName}, you must /start first.").void
     }
   }
-
 }
 
 object BotStarter {
