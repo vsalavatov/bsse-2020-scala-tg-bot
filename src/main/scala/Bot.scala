@@ -1,11 +1,10 @@
 import cats.instances.future._
 import cats.syntax.functor._
 import com.bot4s.telegram.api.RequestHandler
-import com.bot4s.telegram.api.declarative.{Action, Commands}
+import com.bot4s.telegram.api.declarative.Commands
 import com.bot4s.telegram.clients.FutureSttpClient
 import com.bot4s.telegram.future.{Polling, TelegramBot}
-import com.bot4s.telegram.methods.SendPhoto
-import com.bot4s.telegram.models.{InputFile, Message, User}
+import com.bot4s.telegram.models.InputFile
 import com.softwaremill.sttp.{SttpBackend, SttpBackendOptions, sttp}
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import org.json4s.native.Serialization
@@ -15,8 +14,6 @@ import scopt.OParser
 
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.collection.mutable
-import scala.collection.mutable.ListBuffer
 import scala.util.Random;
 
 case class BotUser(id: Int, username: String)
@@ -27,7 +24,9 @@ case class TextMessage(
                       )
 
 case class Response(data: List[Data])
+
 case class Data(images: List[InnerData])
+
 case class InnerData(link: String)
 
 case class NoImageException(msg: String) extends Exception
@@ -42,56 +41,14 @@ class PictureService(val imgurClientId: String)(implicit val backend: SttpBacken
       .get(uri"https://api.imgur.com/3/gallery/search?q=${tag}")
       .response(asJson[Response])
 
-    backend.send(request).map { response =>
-      try {
-        Random.shuffle(response.unsafeBody.data.flatMap(_.images)).head.link
-      } catch {
-        case _: Throwable => throw NoImageException("Sorry, no images have been found...")
+
+    backend.send(request).flatMap { response =>
+      Random.shuffle(response.unsafeBody.data.flatMap(_.images)).headOption match {
+        case Some(img) => Future.successful(img.link)
+        case None => Future.failed(NoImageException("Sorry, no images have been found..."))
       }
     }
   }
-}
-
-class Server {
-  private var listOfUsers = new mutable.HashMap[Int, String]
-  private var messagesForUser = new mutable.HashMap[Int, ListBuffer[TextMessage]]
-
-  def registerUser(id: Int, username: String): Unit = {
-    listOfUsers += (id -> username)
-  }
-
-  def isRegistered(user: User): Boolean = {
-    listOfUsers.contains(user.id)
-  }
-
-  def registeredOrNot(ok: Action[Future, User])
-                     (noAccess: Action[Future, User])
-                     (implicit msg: Message): Future[Unit] = {
-    msg.from.fold(Future.successful(())) { user =>
-      if (isRegistered(user))
-        ok(user)
-      else
-        noAccess(user)
-    }
-  }
-
-  def getAllUsers() = {
-    listOfUsers
-  }
-
-  def sendMessage(toUser: Int, fromUser: User, msg: String): Unit = {
-    if (!messagesForUser.contains(toUser))
-      messagesForUser += (toUser -> ListBuffer(TextMessage(BotUser(fromUser.id, fromUser.username.getOrElse(fromUser.id.toString)), msg)))
-    else
-      messagesForUser(toUser) += TextMessage(BotUser(fromUser.id, fromUser.username.getOrElse(fromUser.id.toString)), msg)
-  }
-
-  def getNewMessages(user: Int) = {
-    val msgs = messagesForUser(user)
-    messagesForUser -= user
-    msgs
-  }
-
 }
 
 class Bot(override val client: RequestHandler[Future], val server: Server, val service: PictureService) extends TelegramBot
