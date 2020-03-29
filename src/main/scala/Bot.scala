@@ -5,16 +5,11 @@ import com.bot4s.telegram.api.declarative.Commands
 import com.bot4s.telegram.clients.FutureSttpClient
 import com.bot4s.telegram.future.{Polling, TelegramBot}
 import com.bot4s.telegram.models.InputFile
-import com.softwaremill.sttp.{SttpBackend, SttpBackendOptions, sttp}
+import com.softwaremill.sttp.{SttpBackend, SttpBackendOptions}
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
-import org.json4s.native.Serialization
-import com.softwaremill.sttp.json4s._
-import com.softwaremill.sttp._
-import scopt.OParser
 
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.util.Random;
 
 case class BotUser(id: Int, username: String)
 
@@ -29,33 +24,10 @@ case class Data(images: List[InnerData])
 
 case class InnerData(link: String)
 
-case class NoImageException(msg: String) extends Exception
-
-class PictureService(val imgurClientId: String)(implicit val backend: SttpBackend[Future, Nothing], implicit val ec: ExecutionContext) {
-
-  private implicit val serialization: Serialization.type = org.json4s.native.Serialization
-
-  def getImage(tag: String): Future[String] = {
-    val request = sttp
-      .header("Authorization", "Client-ID " + imgurClientId)
-      .get(uri"https://api.imgur.com/3/gallery/search?q=${tag}")
-      .response(asJson[Response])
-
-
-    backend.send(request).flatMap { response =>
-      Random.shuffle(response.unsafeBody.data.flatMap(_.images)).headOption match {
-        case Some(img) => Future.successful(img.link)
-        case None => Future.failed(NoImageException("Sorry, no images have been found..."))
-      }
-    }
-  }
-}
-
 class Bot(override val client: RequestHandler[Future], val server: Server, val service: PictureService) extends TelegramBot
   with Polling
   with Commands[Future]
   with PhotoTrait[Future] {
-
 
   onCommand("/start") { implicit msg =>
     msg.from match {
