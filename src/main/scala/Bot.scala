@@ -77,25 +77,33 @@ class Bot(override val client: RequestHandler[Future], val server: Server, val s
   onCommand("/img") { implicit msg =>
     server.registeredOrNot { _ =>
       val tag = msg.text.get.drop("/img ".length)
-      try {
-        if (tag.isEmpty) throw new IndexOutOfBoundsException()
-        Future(service.getImage(tag).onComplete {
-          case Success(link) =>
-            try {
-              replyWithPhoto(InputFile(link)).void
-            } catch {
-              case _ => reply(link).void // maybe it isn't a photo...
-            }
-          case Failure(e: NoImageException) => reply(e.msg).void
-          case Failure(e) => reply(e.getMessage).void
-        })
-      } catch {
-        case _: IndexOutOfBoundsException => reply("Empty argument list. Usage: /img tag").void
+      val message = {
+        if (tag.isEmpty) reply("Empty argument list. Usage: /img tag")
+        else {
+          service.getImage(tag).transformWith {
+            case Success(link) => replyWithPhoto(InputFile(link)).recoverWith {
+                case _ => reply(link).void // maybe it isn't a photo...
+              }
+            case Failure(e: NoImageException) => reply(e.msg)
+            case Failure(e) => reply(e.getMessage)
+          }
+        }
       }
+      message.void
     } /* or else */ {
       user =>
         reply(s"${user.firstName}, you must /start first.").void
     }
+  }
+
+  onCommand("/help") { implicit msg =>
+    reply(
+      "/start --- Before you do anything else you should register\n " +
+        "/img {tag} --- Find a random image based on this tag\n" +
+      "/users --- Show list of all registered users\n" +
+      "/send {id} {message} --- Send message to user with this id\n" +
+      "/check --- Get all new messages for you"
+    ).void
   }
 }
 
