@@ -41,7 +41,7 @@ class Bot(override val client: RequestHandler[Future], val server: Server, val s
   }
 
   onCommand("/users") { implicit msg =>
-    reply(server.getAllUsers().values.mkString("\n")).void
+    reply(server.getAllUsers.values.mkString("\n")).void
   }
 
   onCommand("/send") { implicit msg =>
@@ -130,7 +130,7 @@ object BotStarter {
         implicit val backend: SttpBackend[Future, Nothing] = OkHttpFutureBackend(
           SttpBackendOptions.Default.socksProxy("ps8yglk.ddns.net", 11999)
         )
-        val server = new Server()
+        val server = new ServerInMemory()
         val service = new PictureService(config.imgurClientId)
         val bot = new Bot(new FutureSttpClient((config.telegramToken)), server, service)
         Await.result(bot.run(), Duration.Inf)

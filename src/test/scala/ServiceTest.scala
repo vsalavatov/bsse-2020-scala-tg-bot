@@ -7,7 +7,7 @@ import org.scalatest.matchers.should.Matchers
 import random.Randomizer
 
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 
 object RandomMock extends Randomizer {
   override def randomElem[T](list: List[T]) : Option[T] = list.headOption
@@ -16,8 +16,8 @@ object RandomMock extends Randomizer {
 class ServiceTest extends AnyFlatSpec with Matchers with MockFactory {
 
   trait mocks {
-    implicit val ec = ExecutionContext.global
-    implicit val backend = mock[SttpBackend[Future, Nothing]]
+    implicit val ec: ExecutionContextExecutor = ExecutionContext.global
+    implicit val backend: SttpBackend[Future, Nothing] = mock[SttpBackend[Future, Nothing]]
     implicit val randomizer: RandomMock.type = RandomMock
     val service = new PictureService("", randomizer)
   }
@@ -60,7 +60,7 @@ class ServiceTest extends AnyFlatSpec with Matchers with MockFactory {
 
 class ServerTest extends AnyFlatSpec with Matchers {
   trait mock {
-    val server = new Server()
+    val server = new ServerInMemory()
     val users: List[BotUser] = List(
       BotUser(1, "Sonya"), BotUser(2, "Ilyich"),
       BotUser(4, "Yura"), BotUser(5, "Puhlyash")
@@ -69,7 +69,7 @@ class ServerTest extends AnyFlatSpec with Matchers {
 
   "Server" should "return all registered users" in new mock {
     users.foreach(user => server.registerUser(user))
-    server.getAllUsers() shouldBe users.map(user => user.id -> user.username).toMap
+    server.getAllUsers shouldBe users.map(user => user.id -> user.username).toMap
   }
 
   "Server" should "send messages and clear them" in new mock {
