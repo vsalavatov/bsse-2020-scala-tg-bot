@@ -1,11 +1,11 @@
-import org.json4s.native.Serialization
+package bsse2018.tgbot
+
+import bsse2018.tgbot.random.{RandomRest, Randomizer}
 import com.softwaremill.sttp.json4s._
-import com.softwaremill.sttp._
-import com.softwaremill.sttp.sttp
-import random.{RandomRest, Randomizer}
+import com.softwaremill.sttp.{sttp, _}
+import org.json4s.native.Serialization
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Random
 
 class PictureService(val imgurClientId: String, val random: Randomizer = RandomRest)(implicit val backend: SttpBackend[Future, Nothing], implicit val ec: ExecutionContext) {
 

@@ -1,4 +1,4 @@
-package random
+package bsse2018.tgbot.random
 
 import scala.util.Random
 

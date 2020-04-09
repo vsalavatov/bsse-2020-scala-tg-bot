@@ -1,13 +1,17 @@
+package bsse2018.tgbot
+
+import bsse2018.tgbot.random.Randomizer
 import com.bot4s.telegram.models.User
 import com.softwaremill.sttp.SttpBackend
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
-import random.Randomizer
+import slick.jdbc.H2Profile.api._
 
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
+import scala.io.Source
 
 object RandomMock extends Randomizer {
   override def randomElem[T](list: List[T]) : Option[T] = list.headOption
@@ -22,7 +26,7 @@ class ServiceTest extends AnyFlatSpec with Matchers with MockFactory {
     val service = new PictureService("", randomizer)
   }
 
-  "PictureService" should "throw NoCatException" in new mocks {
+  "bsse2018.tgbot.PictureService" should "throw NoCatException" in new mocks {
     (backend.send[String] _).expects(*).returning(Future.successful(
       com.softwaremill.sttp.Response.error("No cats found", 404)
     ))
@@ -33,7 +37,7 @@ class ServiceTest extends AnyFlatSpec with Matchers with MockFactory {
   }
 
 
-  "PictureService" should "return single cat" in new mocks {
+  "bsse2018.tgbot.PictureService" should "return single cat" in new mocks {
     (backend.send[Response] _).expects(*).returning(Future.successful(
       com.softwaremill.sttp.Response.ok(Response(List(Data(images = List(InnerData("solo cat"))))))
     ))
@@ -44,7 +48,7 @@ class ServiceTest extends AnyFlatSpec with Matchers with MockFactory {
   }
 
 
-  "PictureService" should "return first cat" in new mocks {
+  "bsse2018.tgbot.PictureService" should "return first cat" in new mocks {
     (backend.send[Response] _).expects(*).returning(Future.successful(
       com.softwaremill.sttp.Response.ok(Response(List(Data(images = List(
         InnerData("uno cat"),
@@ -58,7 +62,7 @@ class ServiceTest extends AnyFlatSpec with Matchers with MockFactory {
   }
 }
 
-class ServerTest extends AnyFlatSpec with Matchers {
+class ServerInMemoryTest extends AnyFlatSpec with Matchers {
   trait mock {
     val server = new ServerInMemory()
     val users: List[BotUser] = List(
@@ -67,14 +71,41 @@ class ServerTest extends AnyFlatSpec with Matchers {
     )
   }
 
-  "Server" should "return all registered users" in new mock {
+  "ServerInMemory" should "return all registered users" in new mock {
     users.foreach(user => server.registerUser(user))
     server.getAllUsers shouldBe users.map(user => user.id -> user.username).toMap
   }
 
-  "Server" should "send messages and clear them" in new mock {
+  "ServerInMemory" should "send messages and clear them" in new mock {
     server.sendMessage(2, User(1, isBot = false, firstName = "Sonya", username = Some("Sonya")), "uno uno uno")
     server.getNewMessages(2) shouldBe ListBuffer(TextMessage(BotUser(1, "Sonya"),"uno uno uno"))
     server.getNewMessages(2) shouldBe ListBuffer()
+  }
+}
+
+class ServerDBTest extends AnyFlatSpec with Matchers {
+  trait mock {
+    val db = Database.forURL("jdbc:h2:mem:test1;DB_CLOSE_DELAY=-1", driver="org.h2.Driver")
+    implicit val ec = ExecutionContext.global
+    val server = new ServerDB(db)
+    val users: List[BotUser] = List(
+      BotUser(1, "Sonya"), BotUser(2, "Ilyich"),
+      BotUser(4, "Yura"), BotUser(5, "Puhlyash")
+    )
+  }
+
+  "ServerDB" should "return all registered users" in new mock {
+    users.foreach(user => server.registerUser(user))
+    server.getAllUsers shouldBe users.map(user => user.id -> user.username).toMap
+
+    db.close()
+  }
+
+  "ServerDB" should "send messages and clear them" in new mock {
+    server.sendMessage(2, User(1, isBot = false, firstName = "Sonya", username = Some("Sonya")), "uno uno uno")
+    server.getNewMessages(2) shouldBe ListBuffer(TextMessage(BotUser(1, "Sonya"),"uno uno uno"))
+    server.getNewMessages(2) shouldBe ListBuffer()
+
+    db.close()
   }
 }
