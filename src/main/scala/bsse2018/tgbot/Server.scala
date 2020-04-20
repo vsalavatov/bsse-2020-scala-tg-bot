@@ -25,4 +25,8 @@ trait Server {
   def sendMessage(toUser: Int, fromUser: User, msg: String): Unit
 
   def getNewMessages(user: Int): List[TextMessage]
+
+  def getImage(tag: String, userId: Option[Int]): Future[String]
+
+  def getStats(idOrLogin: String): Future[Option[String]]
 }
