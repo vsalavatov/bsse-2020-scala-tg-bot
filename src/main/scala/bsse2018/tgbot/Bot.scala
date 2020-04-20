@@ -114,7 +114,7 @@ class Bot(override val client: RequestHandler[Future], val server: Server) exten
     withArgs { args =>
       val idOrLogin = args.headOption.orElse(msg.from.flatMap(_.username))
       idOrLogin match {
-        case Some(id) => server.getStats(id).flatMap(res => reply(res.getOrElse("There is user with suck id or login")).void)
+        case Some(id) => server.getStats(id).flatMap(res => reply(res.getOrElse("There is user with incorrect id or login")).void)
         case None => reply("User not specified").void
       }
     }
