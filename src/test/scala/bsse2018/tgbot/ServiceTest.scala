@@ -10,7 +10,8 @@ import org.scalatest.matchers.should.Matchers
 import slick.jdbc.H2Profile.api._
 
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutor, Future}
 import scala.io.Source
 
 object RandomMock extends Randomizer {
@@ -64,6 +65,7 @@ class ServiceTest extends AnyFlatSpec with Matchers with MockFactory {
 
 class ServerInMemoryTest extends AnyFlatSpec with Matchers {
   trait mock {
+    implicit val ec = ExecutionContext.global
     val server = new ServerInMemory()
     val users: List[BotUser] = List(
       BotUser(1, "Sonya"), BotUser(2, "Ilyich"),
@@ -73,13 +75,13 @@ class ServerInMemoryTest extends AnyFlatSpec with Matchers {
 
   "ServerInMemory" should "return all registered users" in new mock {
     users.foreach(user => server.registerUser(user))
-    server.getAllUsers shouldBe users.map(user => user.id -> user.username).toMap
+    Await.result(server.getAllUsers, Duration.Inf) shouldBe users.map(user => user.id -> user.username).toMap
   }
 
   "ServerInMemory" should "send messages and clear them" in new mock {
-    server.sendMessage(2, User(1, isBot = false, firstName = "Sonya", username = Some("Sonya")), "uno uno uno")
-    server.getNewMessages(2) shouldBe ListBuffer(TextMessage(BotUser(1, "Sonya"),"uno uno uno"))
-    server.getNewMessages(2) shouldBe ListBuffer()
+    Await.result(server.sendMessage(2, User(1, isBot = false, firstName = "Sonya", username = Some("Sonya")), "uno uno uno"), Duration.Inf)
+      Await.result(server.getNewMessages(2), Duration.Inf) shouldBe ListBuffer(TextMessage(BotUser(1, "Sonya"),"uno uno uno"))
+    Await.result(server.getNewMessages(2), Duration.Inf) shouldBe ListBuffer()
   }
 }
 
@@ -96,15 +98,15 @@ class ServerDBTest extends AnyFlatSpec with Matchers {
 
   "ServerDB" should "return all registered users" in new mock {
     users.foreach(user => server.registerUser(user))
-    server.getAllUsers shouldBe users.map(user => user.id -> user.username).toMap
+    Await.result(server.getAllUsers, Duration.Inf) shouldBe users.map(user => user.id -> user.username).toMap
 
     db.close()
   }
 
   "ServerDB" should "send messages and clear them" in new mock {
-    server.sendMessage(2, User(1, isBot = false, firstName = "Sonya", username = Some("Sonya")), "uno uno uno")
-    server.getNewMessages(2) shouldBe ListBuffer(TextMessage(BotUser(1, "Sonya"),"uno uno uno"))
-    server.getNewMessages(2) shouldBe ListBuffer()
+    Await.result(server.sendMessage(2, User(1, isBot = false, firstName = "Sonya", username = Some("Sonya")), "uno uno uno"), Duration.Inf)
+    Await.result(server.getNewMessages(2), Duration.Inf) shouldBe ListBuffer(TextMessage(BotUser(1, "Sonya"),"uno uno uno"))
+    Await.result(server.getNewMessages(2), Duration.Inf) shouldBe ListBuffer()
 
     db.close()
   }

@@ -4,7 +4,8 @@ import com.bot4s.telegram.models.User
 import slick.jdbc.H2Profile.api._
 
 import scala.concurrent.duration.Duration
-import scala.concurrent.{Await, ExecutionContext}
+import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.util.Success
 
 class ServerDB(val db: Database)(implicit ec: ExecutionContext) extends Server {
 
@@ -31,44 +32,46 @@ class ServerDB(val db: Database)(implicit ec: ExecutionContext) extends Server {
   private val registeredUsers = TableQuery[RegisteredUsers]
   private val postponedMessages = TableQuery[PostponedMessages]
 
-  {
-    Await.result(db.run(registeredUsers.schema.createIfNotExists), Duration.Inf)
-    Await.result(db.run(postponedMessages.schema.createIfNotExists), Duration.Inf)
+  private val initQuery = for {
+    _ <- db.run(registeredUsers.schema.createIfNotExists)
+    _ <- db.run(postponedMessages.schema.createIfNotExists)
+  } yield ()
+
+  override def registerUser(user: BotUser): Future[Unit] = initQuery.flatMap { _ =>
+    val query = for {
+      _ <- registeredUsers += (user.id, user.username)
+    } yield ()
+    db.run(query)
   }
 
-  override def registerUser(user: BotUser): Unit = {
-    val query = {
-      registeredUsers += (user.id, user.username)
-    }
-    val resultFuture = db.run(query)
-    Await.result(resultFuture, Duration.Inf)
-  }
-
-  override def isRegistered(user: User): Boolean = {
+  override def isRegistered(user: User): Future[Boolean] = initQuery.flatMap { _ =>
     val query = registeredUsers.filter(_.userId === user.id).result
-    val result = Await.result(db.run(query), Duration.Inf)
-    result.nonEmpty
+    db.run(query).flatMap(r => Future {
+      r.nonEmpty
+    })
   }
 
-  override def getAllUsers: Map[Int, String] = {
+  override def getAllUsers: Future[Map[Int, String]] = initQuery.flatMap { _ =>
     val query = registeredUsers.result
-    val result = Await.result(db.run(query), Duration.Inf)
-    result.toMap
+    db.run(query).flatMap(r => Future {
+      r.toMap
+    })
   }
 
-  override def sendMessage(toUser: Int, fromUser: User, msg: String): Unit = {
-    val query = {
-      postponedMessages += (toUser, fromUser.id, fromUser.username.getOrElse(fromUser.id.toString), msg)
-    }
-    Await.result(db.run(query), Duration.Inf)
+  override def sendMessage(toUser: Int, fromUser: User, msg: String): Future[Unit] = initQuery.flatMap { _ =>
+    val query = for {
+      _ <- postponedMessages += (toUser, fromUser.id, fromUser.username.getOrElse(fromUser.id.toString), msg)
+    } yield ()
+    db.run(query)
   }
 
-  override def getNewMessages(user: Int): List[TextMessage] = {
+  override def getNewMessages(user: Int): Future[List[TextMessage]] = initQuery.flatMap { _ =>
     val messagesQuery = postponedMessages.filter(_.toUserId === user)
-    val messages = Await.result(db.run(messagesQuery.result), Duration.Inf)
-    Await.result(db.run(messagesQuery.delete), Duration.Inf)
-    messages.map {
-      case (_, fromUserId, fromUsername, msg) => TextMessage(BotUser(fromUserId, fromUsername), msg)
-    }.toList
+    db.run(messagesQuery.result).flatMap(messages => Future {
+      db.run(messagesQuery.delete)
+      messages.map {
+        case (_, fromUserId, fromUsername, msg) => TextMessage(BotUser(fromUserId, fromUsername), msg)
+      }.toList
+    })
   }
 }
