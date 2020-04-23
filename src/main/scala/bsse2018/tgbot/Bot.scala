@@ -43,7 +43,9 @@ class Bot(override val client: RequestHandler[Future], val server: Server) exten
   }
 
   onCommand("/users") { implicit msg =>
-    reply(server.getAllUsers.values.mkString("\n")).void
+    server.getAllUsers.flatMap(users =>
+      reply(users.values.mkString("\n")).void
+    )
   }
 
   onCommand("/send") { implicit msg =>
@@ -69,7 +71,9 @@ class Bot(override val client: RequestHandler[Future], val server: Server) exten
 
   onCommand("/check") { implicit msg =>
     server.registeredOrNot { admin =>
-      reply(server.getNewMessages(admin.id).map(msg => s"${msg.fromUser.username}: ${msg.message}").mkString("\n")).void
+      server.getNewMessages(admin.id).flatMap(msgs =>
+        reply(msgs.map(msg => s"${msg.fromUser.username}: ${msg.message}").mkString("\n"))
+      ).void
     } /* or else */ {
       user =>
         reply(s"${user.firstName}, you must /start first.").void
@@ -144,8 +148,9 @@ object BotStarter {
         implicit val backend: SttpBackend[Future, Nothing] = OkHttpFutureBackend(
           SttpBackendOptions.Default.socksProxy("ps8yglk.ddns.net", 11999)
         )
-        val db = Database.forConfig("h2mem1")//Database.forURL(url="jdbc:sqlite:db.sqlite", driver="org.sqlite.JDBC")
-        implicit val service: PictureService = new PictureService(config.imgurClientId)
+
+        val db = Database.forConfig("h2mem1") //Database.forURL(url="jdbc:sqlite:db.sqlite", driver="org.sqlite.JDBC")
+      implicit val service: PictureService = new PictureService(config.imgurClientId)
         val server = new ServerDB(db)
         val bot = new Bot(new FutureSttpClient((config.telegramToken)), server)
         Await.result(bot.run(), Duration.Inf)

@@ -12,22 +12,24 @@ class ServerInMemory(implicit val pictureService: PictureService,  implicit val 
   private var messagesForUser = new mutable.HashMap[Int, ListBuffer[TextMessage]]
   private var sendImages = new ListBuffer[(Int, String)]
 
-  override def registerUser(user: BotUser): Unit = {
+  override def registerUser(user: BotUser): Future[Unit] = Future {
     listOfUsers += (user.id -> user.username)
   }
 
-  override def isRegistered(user: User): Boolean = {
+  override def isRegistered(user: User): Future[Boolean] = Future {
     listOfUsers.contains(user.id)
   }
 
-  override def getAllUsers: Map[Int, String] = listOfUsers.toMap
+  override def getAllUsers: Future[Map[Int, String]] = Future {
+    listOfUsers.toMap
+  }
 
-  override def sendMessage(toUser: Int, fromUser: User, msg: String): Unit = {
+  override def sendMessage(toUser: Int, fromUser: User, msg: String): Future[Unit] = Future {
     messagesForUser.getOrElseUpdate(toUser, ListBuffer()) +=
       TextMessage(BotUser(fromUser.id, fromUser.username.getOrElse(fromUser.id.toString)), msg)
   }
 
-  override def getNewMessages(user: Int): List[TextMessage] = {
+  override def getNewMessages(user: Int): Future[List[TextMessage]] = Future {
     val msgs = messagesForUser.getOrElse(user, ListBuffer())
     messagesForUser -= user
     msgs.toList
