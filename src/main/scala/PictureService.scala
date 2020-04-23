@@ -2,11 +2,12 @@ import org.json4s.native.Serialization
 import com.softwaremill.sttp.json4s._
 import com.softwaremill.sttp._
 import com.softwaremill.sttp.sttp
+import random.{RandomRest, Randomizer}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Random
 
-class PictureService(val imgurClientId: String)(implicit val backend: SttpBackend[Future, Nothing], implicit val ec: ExecutionContext) {
+class PictureService(val imgurClientId: String, val random: Randomizer = RandomRest)(implicit val backend: SttpBackend[Future, Nothing], implicit val ec: ExecutionContext) {
 
   private implicit val serialization: Serialization.type = org.json4s.native.Serialization
 
@@ -18,7 +19,8 @@ class PictureService(val imgurClientId: String)(implicit val backend: SttpBacken
 
 
     backend.send(request).flatMap { response =>
-      Random.shuffle(response.unsafeBody.data.flatMap(_.images)).headOption match {
+      val images = response.unsafeBody.data.flatMap(_.images)
+      random.randomElem(images) match {
         case Some(img) => Future.successful(img.link)
         case None => Future.failed(NoImageException("Sorry, no images have been found..."))
       }
