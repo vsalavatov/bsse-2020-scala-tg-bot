@@ -27,7 +27,7 @@ case class Data(images: List[InnerData])
 
 case class InnerData(link: String)
 
-class Bot(override val client: RequestHandler[Future], val server: Server, val service: PictureService) extends TelegramBot
+class Bot(override val client: RequestHandler[Future], val server: Server) extends TelegramBot
   with Polling
   with Commands[Future]
   with PhotoTrait[Future] {
@@ -83,10 +83,11 @@ class Bot(override val client: RequestHandler[Future], val server: Server, val s
   onCommand("/img") { implicit msg =>
     server.registeredOrNot { _ =>
       val tag = msg.text.get.drop("/img ".length)
+      val userId = msg.from.map(user => user.id)
       val message = {
         if (tag.isEmpty) reply("Empty argument list. Usage: /img tag")
         else {
-          service.getImage(tag).transformWith {
+          server.getImage(tag, userId).transformWith {
             case Success(link) => replyWithPhoto(InputFile(link)).recoverWith {
               case _ => reply(link).void // maybe it isn't a photo...
             }
@@ -111,6 +112,16 @@ class Bot(override val client: RequestHandler[Future], val server: Server, val s
         "/send {id} {message} --- Send message to user with this id\n" +
         "/check --- Get all new messages for you\n"
     ).void
+  }
+
+  onCommand("/stats") { implicit msg =>
+    withArgs { args =>
+      val idOrLogin = args.headOption.orElse(msg.from.flatMap(_.username))
+      idOrLogin match {
+        case Some(id) => server.getStats(id).flatMap(res => reply(res.getOrElse("There is user with incorrect id or login")).void)
+        case None => reply("User not specified").void
+      }
+    }
   }
 }
 
@@ -137,10 +148,11 @@ object BotStarter {
         implicit val backend: SttpBackend[Future, Nothing] = OkHttpFutureBackend(
           SttpBackendOptions.Default.socksProxy("ps8yglk.ddns.net", 11999)
         )
-        val db = Database.forURL(url = "jdbc:sqlite:db.sqlite", driver = "org.sqlite.JDBC")
+
+        val db = Database.forConfig("h2mem1") //Database.forURL(url="jdbc:sqlite:db.sqlite", driver="org.sqlite.JDBC")
+      implicit val service: PictureService = new PictureService(config.imgurClientId)
         val server = new ServerDB(db)
-        val service = new PictureService(config.imgurClientId)
-        val bot = new Bot(new FutureSttpClient((config.telegramToken)), server, service)
+        val bot = new Bot(new FutureSttpClient((config.telegramToken)), server)
         Await.result(bot.run(), Duration.Inf)
         db.close()
       case None =>

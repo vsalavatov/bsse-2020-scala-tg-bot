@@ -24,7 +24,11 @@ trait Server {
 
   def getAllUsers: Future[Map[Int, String]]
 
-  def sendMessage(toUser: Int, fromUser: User, msg: String): Future[Unit]
-
   def getNewMessages(user: Int): Future[List[TextMessage]]
+
+  def getImage(tag: String, userId: Option[Int]): Future[String]
+
+  def getStats(idOrLogin: String): Future[Option[String]]
+
+  def sendMessage(toUser: Int, fromUser: User, msg: String): Future[Unit]
 }

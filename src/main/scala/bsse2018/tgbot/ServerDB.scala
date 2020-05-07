@@ -3,11 +3,10 @@ package bsse2018.tgbot
 import com.bot4s.telegram.models.User
 import slick.jdbc.H2Profile.api._
 
-import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.util.Success
+import scala.util.Try
 
-class ServerDB(val db: Database)(implicit ec: ExecutionContext) extends Server {
+class ServerDB(val db: Database)(implicit val pictureService: PictureService, implicit val ec: ExecutionContext) extends Server {
 
   private class RegisteredUsers(tag: Tag) extends Table[(Int, String)](tag, "REGISTERED_USERS") {
     def userId = column[Int]("USER_ID", O.PrimaryKey)
@@ -29,12 +28,24 @@ class ServerDB(val db: Database)(implicit ec: ExecutionContext) extends Server {
     def * = (toUserId, fromUserId, fromUsername, message)
   }
 
+  private class SendImages(tag: Tag) extends Table[(Long, Int, String)](tag, "SEND_IMAGES") {
+    def id = column[Long]("ID", O.AutoInc, O.PrimaryKey)
+
+    def userId = column[Int]("USER_ID")
+
+    def link = column[String]("IMAGE_LINKS")
+
+    def * = (id, userId, link)
+  }
+
   private val registeredUsers = TableQuery[RegisteredUsers]
   private val postponedMessages = TableQuery[PostponedMessages]
+  private val sendImages = TableQuery[SendImages]
 
   private val initQuery = for {
     _ <- db.run(registeredUsers.schema.createIfNotExists)
     _ <- db.run(postponedMessages.schema.createIfNotExists)
+    _ <- db.run(sendImages.schema.createIfNotExists)
   } yield ()
 
   override def registerUser(user: BotUser): Future[Unit] = initQuery.flatMap { _ =>
@@ -73,5 +84,25 @@ class ServerDB(val db: Database)(implicit ec: ExecutionContext) extends Server {
         case (_, fromUserId, fromUsername, msg) => TextMessage(BotUser(fromUserId, fromUsername), msg)
       }.toList
     })
+  }
+
+  override def getImage(tag: String, userId: Option[Int]): Future[String] = initQuery.flatMap { _ =>
+    pictureService.getImage(tag).flatMap { img =>
+      userId match {
+        case Some(id) => db.run(sendImages += (-1, id, img))
+      }
+      Future.successful(img)
+    }
+  }
+
+  override def getStats(idOrLogin: String): Future[Option[String]] = initQuery.flatMap { _ =>
+    val filterCriteria: Option[Int] = Try(idOrLogin.toInt).toOption
+    val transaction = for {
+      realId <- registeredUsers.filter { user: RegisteredUsers =>
+        user.userId.? === filterCriteria || user.username === idOrLogin
+      }.map(_.userId).result.headOption
+      images <- sendImages.filter(_.userId.? === realId).map(_.link).result
+    } yield realId.map(_ => images.toList)
+    db.run(transaction).map(_.map(img => img.mkString("\n")))
   }
 }
