@@ -1,3 +1,5 @@
+package bsse2018.tgbot
+
 import cats.instances.future._
 import cats.syntax.functor._
 import com.bot4s.telegram.api.RequestHandler
@@ -5,12 +7,12 @@ import com.bot4s.telegram.api.declarative.Commands
 import com.bot4s.telegram.clients.FutureSttpClient
 import com.bot4s.telegram.future.{Polling, TelegramBot}
 import com.bot4s.telegram.models.InputFile
-import com.softwaremill.sttp.{SttpBackend, SttpBackendOptions}
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
-
+import com.softwaremill.sttp.{SttpBackend, SttpBackendOptions}
+import slick.jdbc.H2Profile.api._
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, Success}
 
 case class BotUser(id: Int, username: String)
 
@@ -41,7 +43,9 @@ class Bot(override val client: RequestHandler[Future], val server: Server, val s
   }
 
   onCommand("/users") { implicit msg =>
-    reply(server.getAllUsers().values.mkString("\n")).void
+    server.getAllUsers.flatMap(users =>
+      reply(users.values.mkString("\n")).void
+    )
   }
 
   onCommand("/send") { implicit msg =>
@@ -67,7 +71,9 @@ class Bot(override val client: RequestHandler[Future], val server: Server, val s
 
   onCommand("/check") { implicit msg =>
     server.registeredOrNot { admin =>
-      reply(server.getNewMessages(admin.id).map(msg => s"${msg.fromUser.username}: ${msg.message}").mkString("\n")).void
+      server.getNewMessages(admin.id).flatMap(msgs =>
+        reply(msgs.map(msg => s"${msg.fromUser.username}: ${msg.message}").mkString("\n"))
+      ).void
     } /* or else */ {
       user =>
         reply(s"${user.firstName}, you must /start first.").void
@@ -82,8 +88,8 @@ class Bot(override val client: RequestHandler[Future], val server: Server, val s
         else {
           service.getImage(tag).transformWith {
             case Success(link) => replyWithPhoto(InputFile(link)).recoverWith {
-                case _ => reply(link).void // maybe it isn't a photo...
-              }
+              case _ => reply(link).void // maybe it isn't a photo...
+            }
             case Failure(e: NoImageException) => reply(e.msg)
             case Failure(e) => reply(e.getMessage)
           }
@@ -97,12 +103,13 @@ class Bot(override val client: RequestHandler[Future], val server: Server, val s
   }
 
   onCommand("/help") { implicit msg =>
+    println(s"got /help from ${msg.from.mkString(" ")}")
     reply(
       "/start --- Before you do anything else you should register\n " +
         "/img {tag} --- Find a random image based on this tag\n" +
-      "/users --- Show list of all registered users\n" +
-      "/send {id} {message} --- Send message to user with this id\n" +
-      "/check --- Get all new messages for you"
+        "/users --- Show list of all registered users\n" +
+        "/send {id} {message} --- Send message to user with this id\n" +
+        "/check --- Get all new messages for you\n"
     ).void
   }
 }
@@ -130,10 +137,12 @@ object BotStarter {
         implicit val backend: SttpBackend[Future, Nothing] = OkHttpFutureBackend(
           SttpBackendOptions.Default.socksProxy("ps8yglk.ddns.net", 11999)
         )
-        val server = new Server()
+        val db = Database.forURL(url = "jdbc:sqlite:db.sqlite", driver = "org.sqlite.JDBC")
+        val server = new ServerDB(db)
         val service = new PictureService(config.imgurClientId)
         val bot = new Bot(new FutureSttpClient((config.telegramToken)), server, service)
         Await.result(bot.run(), Duration.Inf)
+        db.close()
       case None =>
         println("You must specify service tokens!")
     }

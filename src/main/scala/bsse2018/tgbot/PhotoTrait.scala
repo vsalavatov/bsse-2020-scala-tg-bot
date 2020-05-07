@@ -1,9 +1,9 @@
+package bsse2018.tgbot
+
 import com.bot4s.telegram.api.declarative.Messages
 import com.bot4s.telegram.methods.ParseMode.ParseMode
 import com.bot4s.telegram.methods.SendPhoto
 import com.bot4s.telegram.models.{InputFile, Message, ReplyMarkup}
-
-import scala.concurrent.Future
 
 trait PhotoTrait[F[_]] extends Messages[F] {
   def replyWithPhoto(photo               : InputFile,
